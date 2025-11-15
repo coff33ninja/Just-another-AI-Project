@@ -1,0 +1,30 @@
+google-generativeai>=0.3.0
+SpeechRecognition>=3.10.0
+pyaudio>=0.2.13
+sounddevice>=0.4.6
+soundfile>=0.12.1
+numpy>=1.24.0
+python-dotenv>=1.0.0
+
+# TTS Engines (install at least one)
+# Kokoro - High quality, many voices, requires espeak-ng
+kokoro>=0.9.4
+
+# KittenTTS - Ultra-lightweight fallback, CPU-only
+# Install with: pip install https://github.com/KittenML/KittenTTS/releases/download/0.1/kittentts-0.1.0-py3-none-any.whl
+
+# Optional: Offline Wake Word Detection (Porcupine)
+# Requires access key from https://console.picovoice.ai/
+pvporcupine>=3.0.0
+pvrecorder>=1.2.0  # Required for Porcupine audio capture
+
+# Optional: Local Speech Recognition (Whisper)
+openai-whisper>=20231117  # GPU recommended for larger models
+torch>=2.0.0  # Required for Whisper and GPU support
+torchaudio>=2.0.0
+
+# Optional: Voice Activity Detection
+webrtcvad>=2.0.10
+
+# Optional: Plugin Dependencies
+requests>=2.31.0  # For weather plugin
