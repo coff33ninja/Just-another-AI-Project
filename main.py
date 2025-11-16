@@ -6,6 +6,9 @@ import random
 import threading
 import time
 import os
+import re
+import json
+from datetime import datetime
 from config import (
     GEMINI_API_KEY, GEMINI_MODEL, load_personality,
     WAKE_WORD_ENGINE, PORCUPINE_ACCESS_KEY, PORCUPINE_SENSITIVITY,
@@ -392,6 +395,18 @@ class VoiceAssistant:
             print(f"  Audio RMS: {rms:.6f}, Peak: {peak:.6f}")
             if audio_np.size == 0 or peak < 1e-4 or rms < 1e-5:
                 print("⚠️  No significant audio detected (silence)")
+                # Log silence event
+                self._log_utterance({
+                    "timestamp": datetime.utcnow().isoformat(),
+                    "engine": "whisper",
+                    "model": WHISPER_MODEL,
+                    "device": self.device,
+                    "fp16": bool(self.use_fp16),
+                    "rms": rms,
+                    "peak": peak,
+                    "text": None,
+                    "error": "silence"
+                })
                 return None
 
             # Use whisper's audio helpers to pad/trim to the model's expected length
@@ -406,6 +421,19 @@ class VoiceAssistant:
             result = self.stt_engine.transcribe(audio_np, fp16=self.use_fp16, language=self.lang_whisper)
             text = result.get("text", "").strip()
 
+            # Log transcription
+            self._log_utterance({
+                "timestamp": datetime.utcnow().isoformat(),
+                "engine": "whisper",
+                "model": WHISPER_MODEL,
+                "device": self.device,
+                "fp16": bool(self.use_fp16),
+                "rms": rms,
+                "peak": peak,
+                "text": text,
+                "error": None
+            })
+
             if text:
                 print(f"📝 You said: {text}")
                 return text
@@ -415,8 +443,34 @@ class VoiceAssistant:
 
         except Exception as e:
             print(f"❌ Whisper transcription error: {e}")
+            # Log error
+            try:
+                self._log_utterance({
+                    "timestamp": datetime.utcnow().isoformat(),
+                    "engine": "whisper",
+                    "model": WHISPER_MODEL,
+                    "device": self.device,
+                    "fp16": bool(self.use_fp16),
+                    "rms": rms if 'rms' in locals() else None,
+                    "peak": peak if 'peak' in locals() else None,
+                    "text": None,
+                    "error": str(e)
+                })
+            except Exception:
+                pass
             # Fallback to Google
             return self._transcribe_google(audio)
+
+    def _log_utterance(self, record: dict):
+        """Append a per-utterance record to logs/utterances.log as JSONL."""
+        try:
+            log_dir = os.path.join(os.getcwd(), "logs")
+            os.makedirs(log_dir, exist_ok=True)
+            log_file = os.path.join(log_dir, "utterances.log")
+            with open(log_file, "a", encoding="utf-8") as f:
+                f.write(json.dumps(record, ensure_ascii=False) + "\n")
+        except Exception as e:
+            print(f"⚠️  Failed to write utterance log: {e}")
 
     def _start_interactive_tuner(self):
         """Start a background thread to accept simple runtime tuning commands from stdin.
@@ -464,6 +518,13 @@ class VoiceAssistant:
                             cfg.setup_device()
                             self.use_fp16 = cfg.get_fp16()
                             print(f"Set FP16_MODE = {cfg.FP16_MODE}, use_fp16 = {self.use_fp16}")
+                            # Reload Whisper model to apply fp16 change (may take time)
+                            try:
+                                print("Reloading Whisper model to apply fp16 change (this may take a moment)...")
+                                self._reload_whisper_model()
+                                print("Whisper model reloaded")
+                            except Exception as e:
+                                print(f"Failed to reload Whisper model: {e}")
                         else:
                             print("Invalid fp16 mode. Use auto|true|false")
                     else:
