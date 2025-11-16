@@ -5,9 +5,9 @@ sounddevice>=0.4.6
 soundfile>=0.12.1
 numpy>=1.24.0
 python-dotenv>=1.0.0
-noisereduce
-soundfile
-librosa
+noisereduce>=3.0.3
+soundfile>=0.13.1
+librosa>=0.11.0
 
 # TTS Engines (install at least one)
 # Kokoro - High quality, many voices, requires espeak-ng
