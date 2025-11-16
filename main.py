@@ -25,6 +25,18 @@ class VoiceAssistant:
         self.personality = load_personality(personality_path)
         self.wake_word = self.personality["wake_word"].lower()
         self.is_awake = False
+        # Normalize language codes for Whisper and Google
+        raw_lang = self.personality.get("voice", {}).get("language", "en")
+        # Whisper expects short codes like 'en', Google prefers region codes like 'en-US'
+        try:
+            parts = raw_lang.replace('_', '-').split('-')
+            primary = parts[0].lower()
+            region = parts[1].upper() if len(parts) > 1 else None
+        except Exception:
+            primary = raw_lang.lower()
+            region = None
+        self.lang_whisper = primary
+        self.lang_google = f"{primary}-{region}" if region else primary
         
         # Setup device (CPU/GPU)
         self.device = get_device()
@@ -391,7 +403,7 @@ class VoiceAssistant:
                 pass
 
             # Use config-selected fp16 flag
-            result = self.stt_engine.transcribe(audio_np, fp16=self.use_fp16, language=self.personality.get("voice", {}).get("language", "en"))
+            result = self.stt_engine.transcribe(audio_np, fp16=self.use_fp16, language=self.lang_whisper)
             text = result.get("text", "").strip()
 
             if text:
@@ -466,7 +478,7 @@ class VoiceAssistant:
     def _transcribe_google(self, audio):
         """Transcribe audio using Google STT"""
         try:
-            lang = self.personality["voice"]["language"]
+            lang = getattr(self, 'lang_google', self.personality.get("voice", {}).get("language", "en"))
             text = self.recognizer.recognize_google(audio, language=lang)
             print(f"You said: {text}")
             return text
