@@ -397,7 +397,7 @@ class VoiceAssistant:
                 print("⚠️  No significant audio detected (silence)")
                 # Log silence event
                 self._log_utterance({
-                    "timestamp": datetime.utcnow().isoformat(),
+                    "timestamp": datetime.now(datetime.timezone.utc).isoformat(),
                     "engine": "whisper",
                     "model": WHISPER_MODEL,
                     "device": self.device,
@@ -423,7 +423,7 @@ class VoiceAssistant:
 
             # Log transcription
             self._log_utterance({
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": datetime.now(datetime.timezone.utc).isoformat(),
                 "engine": "whisper",
                 "model": WHISPER_MODEL,
                 "device": self.device,
@@ -446,7 +446,7 @@ class VoiceAssistant:
             # Log error
             try:
                 self._log_utterance({
-                    "timestamp": datetime.utcnow().isoformat(),
+                    "timestamp": datetime.now(datetime.timezone.utc).isoformat(),
                     "engine": "whisper",
                     "model": WHISPER_MODEL,
                     "device": self.device,
