@@ -351,23 +351,38 @@ class VoiceAssistant:
     def _transcribe_whisper(self, audio):
         """Transcribe audio using Whisper"""
         try:
-            # Convert audio to format Whisper expects
-            audio_np = np.frombuffer(audio.get_wav_data(), dtype=np.int16).astype(np.float32) / 32768.0
-            
-            # Use fp16 only for newer GPUs (Compute Capability > 7.0)
-            # GTX 1070 is 6.1, so disable fp16 to avoid compatibility issues
-            use_fp16 = False  # Disabled for GTX 1070 compatibility
-            
-            result = self.stt_engine.transcribe(audio_np, fp16=use_fp16, language="en")
-            text = result["text"].strip()
-            
+            # Convert audio bytes to float32 numpy (Whisper expects 16 kHz float32 mono)
+            wav_bytes = audio.get_wav_data(convert_rate=16000, convert_width=2)
+            audio_np = np.frombuffer(wav_bytes, dtype=np.int16).astype(np.float32) / 32768.0
+
+            # If multi-channel, make mono
+            if audio_np.ndim > 1:
+                audio_np = np.mean(audio_np, axis=1)
+
+            # Quick silence check
+            if audio_np.size == 0 or np.abs(audio_np).max() < 1e-4:
+                print("⚠️  No significant audio detected (silence)")
+                return None
+
+            # Use whisper's audio helpers to pad/trim to the model's expected length
+            try:
+                from whisper import audio as whisper_audio
+                audio_np = whisper_audio.pad_or_trim(audio_np)
+            except Exception:
+                # If whisper.audio helpers aren't available, proceed with raw audio
+                pass
+
+            # GTX 1070 (compute capability 6.1) — keep fp16 disabled for safety
+            result = self.stt_engine.transcribe(audio_np, fp16=False, language=self.personality.get("voice", {}).get("language", "en"))
+            text = result.get("text", "").strip()
+
             if text:
                 print(f"📝 You said: {text}")
                 return text
             else:
                 print("⚠️  No speech detected")
             return None
-        
+
         except Exception as e:
             print(f"❌ Whisper transcription error: {e}")
             # Fallback to Google
