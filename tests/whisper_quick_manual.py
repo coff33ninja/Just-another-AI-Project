@@ -60,9 +60,55 @@ def transcribe_with_whisper(audio, model, language="en"):
     except Exception:
         pass
 
-    # Transcribe with model (fp16 per config.get_fp16())
+    # Save raw WAV for playback/inspection
     try:
-        result = model.transcribe(audio_np, fp16=get_fp16(), language=language)
+        import soundfile as sf
+        import os
+        os.makedirs("logs", exist_ok=True)
+        sf.write("logs/last_whisper_test_raw.wav", audio_np, 16000, subtype="PCM_16")
+        print("Saved raw recording to logs/last_whisper_test_raw.wav")
+    except Exception as e:
+        print(f"Could not save raw WAV: {e}")
+
+    # Attempt simple spectral gating noise reduction if available
+    denoised = None
+    try:
+        import noisereduce as nr
+        # Use a short initial segment as the noise profile (0.5s or less)
+        srate = 16000
+        noise_len = min(int(0.5 * srate), len(audio_np))
+        if noise_len > 0:
+            noise_clip = audio_np[:noise_len]
+            denoised = nr.reduce_noise(y=audio_np, sr=srate, y_noise=noise_clip)
+            try:
+                sf.write("logs/last_whisper_test_denoised.wav", denoised, srate, subtype="PCM_16")
+                print("Saved denoised recording to logs/last_whisper_test_denoised.wav")
+            except Exception:
+                pass
+        else:
+            denoised = audio_np
+    except Exception as e:
+        print(f"noisereduce not available or failed: {e}")
+        denoised = audio_np
+
+    # Normalize to avoid clipping issues when saving
+    try:
+        if denoised is not None and np.max(np.abs(denoised)) > 0:
+            denoised = denoised / max(1e-8, np.max(np.abs(denoised)))
+    except Exception:
+        pass
+
+    # Try transcribing the denoised file (prefer file path for Whisper)
+    try:
+        # If we saved the denoised file, prefer that path
+        denoised_path = "logs/last_whisper_test_denoised.wav"
+        import os
+        if os.path.exists(denoised_path):
+            result = model.transcribe(denoised_path, fp16=get_fp16(), language=language)
+        else:
+            # Fallback to transcribing numpy directly
+            result = model.transcribe(denoised, fp16=get_fp16(), language=language)
+
         text = result.get("text", "").strip()
         return text
     except Exception as e:
