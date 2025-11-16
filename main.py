@@ -4,6 +4,7 @@ import sounddevice as sd
 import numpy as np
 import random
 import threading
+import time
 import os
 from config import (
     GEMINI_API_KEY, GEMINI_MODEL, load_personality,
@@ -34,8 +35,10 @@ class VoiceAssistant:
         
         # Initialize speech recognizer
         self.recognizer = sr.Recognizer()
-        self.recognizer.energy_threshold = 300  # Fixed threshold
-        self.recognizer.dynamic_energy_threshold = False  # Don't auto-adjust too low
+        # Start with a reasonable fixed threshold but allow dynamic adjustment
+        # so short commands after the wake word are captured reliably.
+        self.recognizer.energy_threshold = 300
+        self.recognizer.dynamic_energy_threshold = True
         
         # Initialize microphone with specific device if configured
         if MICROPHONE_INDEX is not None:
@@ -540,7 +543,23 @@ class VoiceAssistant:
                             self.is_awake = True
                             wake_response = self.get_random_response("wake_acknowledgment")
                             print(f"✨ {self.personality['name']}: {wake_response}")
-                            self.speak(wake_response)
+
+                            # Speak the acknowledgement non-blocking so we can start
+                            # preparing the recognizer immediately; then recalibrate
+                            # for ambient noise so short commands (e.g. "what is the time")
+                            # are more likely to be captured.
+                            self.speak(wake_response, blocking=False)
+
+                            # Give TTS a brief moment to start playing, then recalibrate
+                            # the recognizer so ambient noise and playback are accounted for.
+                            time.sleep(0.15)
+                            try:
+                                with self.microphone as source:
+                                    # Short adjustment to be ready for user command
+                                    self.recognizer.adjust_for_ambient_noise(source, duration=0.4)
+                            except Exception:
+                                # If recalibration fails, continue anyway
+                                pass
                     else:
                         # Fallback to STT-based detection
                         user_input = self.listen(listening_for_wake=True)
