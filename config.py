@@ -50,6 +50,9 @@ VAD_SENSITIVITY = int(os.getenv("VAD_SENSITIVITY", "3"))  # 0-3, higher = more s
 # GPU Configuration
 USE_GPU = os.getenv("USE_GPU", "auto")  # auto, true, false
 DEVICE = None  # Will be set based on GPU availability
+# FP16 selection mode: 'auto', 'true', 'false'
+FP16_MODE = os.getenv("FP16_MODE", "auto").lower()
+USE_FP16 = None
 
 # Streaming Configuration
 ENABLE_STREAMING = os.getenv("ENABLE_STREAMING", "true").lower() == "true"
@@ -141,6 +144,16 @@ def setup_device():
             print(f"✓ GPU detected: {device_name}")
             print(f"  Compute Capability: {compute_capability[0]}.{compute_capability[1]}")
             print(f"  CUDA Version: {torch.version.cuda}")
+            # Decide FP16 usage based on FP16_MODE and compute capability
+            global USE_FP16
+            if FP16_MODE == "true":
+                USE_FP16 = True
+            elif FP16_MODE == "false":
+                USE_FP16 = False
+            else:
+                # Auto: enable fp16 for compute capability >= 7.0
+                USE_FP16 = (compute_capability[0] >= 7)
+            print(f"  FP16 enabled: {USE_FP16}")
         else:
             DEVICE = "cpu"
             if USE_GPU == "true":
@@ -151,6 +164,14 @@ def setup_device():
             print("⚠ PyTorch not installed, GPU support unavailable")
     
     return DEVICE
+
+
+def get_fp16():
+    """Return whether fp16 should be used for inference."""
+    global USE_FP16
+    if USE_FP16 is None:
+        setup_device()
+    return bool(USE_FP16)
 
 def get_device():
     """Get current device"""

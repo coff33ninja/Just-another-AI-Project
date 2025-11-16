@@ -13,8 +13,10 @@ from config import (
     VAD_ENABLED, VAD_SENSITIVITY,
     ENABLE_STREAMING, PLUGINS_ENABLED, PLUGINS_DIR,
     MICROPHONE_INDEX, PORCUPINE_MICROPHONE_INDEX, SPEAKER_INDEX,
-    get_device
+    get_device, get_fp16
 )
+import config as cfg
+import sys
 from plugins import PluginManager
 
 class VoiceAssistant:
@@ -27,6 +29,12 @@ class VoiceAssistant:
         # Setup device (CPU/GPU)
         self.device = get_device()
         print(f"🖥️  Using device: {self.device.upper()}")
+        # Decide whether to use fp16 based on config.auto or override
+        try:
+            self.use_fp16 = get_fp16()
+        except Exception:
+            self.use_fp16 = False
+        print(f"  Using fp16: {self.use_fp16}")
         
         # Initialize wake word detection
         self.wake_engine = None
@@ -57,6 +65,13 @@ class VoiceAssistant:
         self.vad_model = None
         if VAD_ENABLED:
             self._initialize_vad()
+
+        # Start interactive tuner if running in a TTY (allow runtime tuning)
+        try:
+            if sys.stdin and sys.stdin.isatty():
+                self._start_interactive_tuner()
+        except Exception:
+            pass
         
         # Initialize Gemini with personality
         genai.configure(api_key=GEMINI_API_KEY)
@@ -360,7 +375,10 @@ class VoiceAssistant:
                 audio_np = np.mean(audio_np, axis=1)
 
             # Quick silence check
-            if audio_np.size == 0 or np.abs(audio_np).max() < 1e-4:
+            peak = float(np.abs(audio_np).max()) if audio_np.size else 0.0
+            rms = float(np.sqrt(np.mean(audio_np ** 2))) if audio_np.size else 0.0
+            print(f"  Audio RMS: {rms:.6f}, Peak: {peak:.6f}")
+            if audio_np.size == 0 or peak < 1e-4 or rms < 1e-5:
                 print("⚠️  No significant audio detected (silence)")
                 return None
 
@@ -372,8 +390,8 @@ class VoiceAssistant:
                 # If whisper.audio helpers aren't available, proceed with raw audio
                 pass
 
-            # GTX 1070 (compute capability 6.1) — keep fp16 disabled for safety
-            result = self.stt_engine.transcribe(audio_np, fp16=False, language=self.personality.get("voice", {}).get("language", "en"))
+            # Use config-selected fp16 flag
+            result = self.stt_engine.transcribe(audio_np, fp16=self.use_fp16, language=self.personality.get("voice", {}).get("language", "en"))
             text = result.get("text", "").strip()
 
             if text:
@@ -387,6 +405,63 @@ class VoiceAssistant:
             print(f"❌ Whisper transcription error: {e}")
             # Fallback to Google
             return self._transcribe_google(audio)
+
+    def _start_interactive_tuner(self):
+        """Start a background thread to accept simple runtime tuning commands from stdin.
+
+        Commands:
+          - vad <0-3>           : set VAD_SENSITIVITY
+          - energy <value>      : set recognizer.energy_threshold
+          - show                : show current settings
+          - fp16 auto|true|false : set FP16_MODE at runtime
+        """
+        def tuner():
+            print("Interactive tuner: type 'show', 'vad <0-3>', 'energy <value>' or 'fp16 <auto|true|false>'")
+            while True:
+                try:
+                    line = sys.stdin.readline()
+                    if not line:
+                        break
+                    line = line.strip()
+                    if not line:
+                        continue
+                    parts = line.split()
+                    cmd = parts[0].lower()
+                    if cmd == "show":
+                        print(f"Device: {self.device}, fp16: {self.use_fp16}, VAD_SENSITIVITY: {cfg.VAD_SENSITIVITY}, energy_threshold: {self.recognizer.energy_threshold}")
+                    elif cmd == "vad" and len(parts) > 1:
+                        try:
+                            new = int(parts[1])
+                            cfg.VAD_SENSITIVITY = max(0, min(3, new))
+                            self._initialize_vad()
+                            print(f"Set VAD_SENSITIVITY = {cfg.VAD_SENSITIVITY}")
+                        except Exception as ex:
+                            print(f"Invalid vad value: {ex}")
+                    elif cmd == "energy" and len(parts) > 1:
+                        try:
+                            new = int(parts[1])
+                            self.recognizer.energy_threshold = new
+                            print(f"Set energy_threshold = {self.recognizer.energy_threshold}")
+                        except Exception as ex:
+                            print(f"Invalid energy value: {ex}")
+                    elif cmd == "fp16" and len(parts) > 1:
+                        mode = parts[1].lower()
+                        if mode in ("auto", "true", "false"):
+                            cfg.FP16_MODE = mode
+                            # Re-run device setup to recompute USE_FP16
+                            cfg.setup_device()
+                            self.use_fp16 = cfg.get_fp16()
+                            print(f"Set FP16_MODE = {cfg.FP16_MODE}, use_fp16 = {self.use_fp16}")
+                        else:
+                            print("Invalid fp16 mode. Use auto|true|false")
+                    else:
+                        print("Unknown command. Use: show, vad <0-3>, energy <value>, fp16 <auto|true|false>")
+                except Exception as e:
+                    print(f"Tuner error: {e}")
+                    break
+
+        thread = threading.Thread(target=tuner, daemon=True, name="interactive-tuner")
+        thread.start()
     
     def _transcribe_google(self, audio):
         """Transcribe audio using Google STT"""
