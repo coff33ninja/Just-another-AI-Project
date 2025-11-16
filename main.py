@@ -354,7 +354,11 @@ class VoiceAssistant:
             # Convert audio to format Whisper expects
             audio_np = np.frombuffer(audio.get_wav_data(), dtype=np.int16).astype(np.float32) / 32768.0
             
-            result = self.stt_engine.transcribe(audio_np, fp16=(self.device == "cuda"))
+            # Use fp16 only for newer GPUs (Compute Capability > 7.0)
+            # GTX 1070 is 6.1, so disable fp16 to avoid compatibility issues
+            use_fp16 = False  # Disabled for GTX 1070 compatibility
+            
+            result = self.stt_engine.transcribe(audio_np, fp16=use_fp16, language="en")
             text = result["text"].strip()
             
             if text:
