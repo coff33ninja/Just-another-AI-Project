@@ -136,7 +136,11 @@ def setup_device():
         import torch
         if torch.cuda.is_available() and USE_GPU in ["auto", "true"]:
             DEVICE = "cuda"
-            print(f"✓ GPU detected: {torch.cuda.get_device_name(0)}")
+            device_name = torch.cuda.get_device_name(0)
+            compute_capability = torch.cuda.get_device_capability(0)
+            print(f"✓ GPU detected: {device_name}")
+            print(f"  Compute Capability: {compute_capability[0]}.{compute_capability[1]}")
+            print(f"  CUDA Version: {torch.version.cuda}")
         else:
             DEVICE = "cpu"
             if USE_GPU == "true":

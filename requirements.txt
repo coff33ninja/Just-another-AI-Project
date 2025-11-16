@@ -20,7 +20,8 @@ pvrecorder>=1.2.0  # Required for Porcupine audio capture
 
 # Optional: Local Speech Recognition (Whisper)
 openai-whisper>=20231117  # GPU recommended for larger models
-torch>=2.0.0  # Required for Whisper and GPU support
+# CUDA-enabled PyTorch for GPU acceleration (GTX 1070 is compute capability 6.1)
+torch>=2.0.0  # Will be installed with CUDA support via pip command
 torchaudio>=2.0.0
 
 # Optional: Voice Activity Detection
