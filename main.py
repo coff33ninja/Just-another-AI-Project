@@ -8,7 +8,7 @@ import time
 import os
 import re
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from config import (
     GEMINI_API_KEY, GEMINI_MODEL, load_personality,
     WAKE_WORD_ENGINE, PORCUPINE_ACCESS_KEY, PORCUPINE_SENSITIVITY,
