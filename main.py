@@ -81,6 +81,11 @@ class VoiceAssistant:
         if VAD_ENABLED:
             self._initialize_vad()
 
+        # Silence detection thresholds (can be tuned at runtime)
+        # Default: more sensitive than before to catch quieter speech
+        self.silence_rms_threshold = 5e-6
+        self.silence_peak_threshold = 1e-5
+
         # Start interactive tuner if running in a TTY (allow runtime tuning)
         try:
             if sys.stdin and sys.stdin.isatty():
@@ -393,7 +398,7 @@ class VoiceAssistant:
             peak = float(np.abs(audio_np).max()) if audio_np.size else 0.0
             rms = float(np.sqrt(np.mean(audio_np ** 2))) if audio_np.size else 0.0
             print(f"  Audio RMS: {rms:.6f}, Peak: {peak:.6f}")
-            if audio_np.size == 0 or peak < 1e-4 or rms < 1e-5:
+            if audio_np.size == 0 or peak < self.silence_peak_threshold or rms < self.silence_rms_threshold:
                 print("⚠️  No significant audio detected (silence)")
                 # Log silence event
                 self._log_utterance({
@@ -510,6 +515,31 @@ class VoiceAssistant:
                             print(f"Set energy_threshold = {self.recognizer.energy_threshold}")
                         except Exception as ex:
                             print(f"Invalid energy value: {ex}")
+                    elif cmd == "silence" and len(parts) > 1:
+                        # silence commands: 'silence show', 'silence rms <value>', 'silence peak <value>', 'silence set <rms> <peak>'
+                        sub = parts[1].lower()
+                        try:
+                            if sub == "show":
+                                print(f"silence_rms_threshold={self.silence_rms_threshold}, silence_peak_threshold={self.silence_peak_threshold}")
+                            elif sub == "rms" and len(parts) > 2:
+                                val = float(parts[2])
+                                self.silence_rms_threshold = max(0.0, val)
+                                print(f"Set silence_rms_threshold = {self.silence_rms_threshold}")
+                            elif sub == "peak" and len(parts) > 2:
+                                val = float(parts[2])
+                                self.silence_peak_threshold = max(0.0, val)
+                                print(f"Set silence_peak_threshold = {self.silence_peak_threshold}")
+                            elif sub == "set" and len(parts) > 2:
+                                # silence set <rms> <peak>
+                                rms_val = float(parts[2])
+                                peak_val = float(parts[3]) if len(parts) > 3 else self.silence_peak_threshold
+                                self.silence_rms_threshold = max(0.0, rms_val)
+                                self.silence_peak_threshold = max(0.0, peak_val)
+                                print(f"Set silence_rms_threshold = {self.silence_rms_threshold}, silence_peak_threshold = {self.silence_peak_threshold}")
+                            else:
+                                print("Usage: silence show | rms <value> | peak <value> | set <rms> <peak>")
+                        except Exception as ex:
+                            print(f"Invalid silence command: {ex}")
                     elif cmd == "fp16" and len(parts) > 1:
                         mode = parts[1].lower()
                         if mode in ("auto", "true", "false"):
