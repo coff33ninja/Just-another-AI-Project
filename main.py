@@ -535,6 +535,47 @@ class VoiceAssistant:
 
         thread = threading.Thread(target=tuner, daemon=True, name="interactive-tuner")
         thread.start()
+
+    def _reload_whisper_model(self):
+        """Reload the Whisper model with current device and fp16 settings."""
+        try:
+            import whisper
+            import torch
+            # free cache before reloading
+            try:
+                torch.cuda.empty_cache()
+            except Exception:
+                pass
+
+            # load model on current device
+            model = whisper.load_model(WHISPER_MODEL, device=self.device)
+            self.stt_engine = model
+            self.stt_type = f"Whisper ({WHISPER_MODEL}) - Offline"
+            # Note: fp16 behavior is passed at transcribe time via fp16 flag
+        except Exception as e:
+            print(f"⚠️  Could not reload Whisper model: {e}")
+
+    def _strip_emojis(self, text: str) -> str:
+        """Remove common emoji characters from a string."""
+        if not isinstance(text, str):
+            return text
+        try:
+            emoji_pattern = re.compile(
+                "[\U0001F600-\U0001F64F"  # emoticons
+                "\U0001F300-\U0001F5FF"  # symbols & pictographs
+                "\U0001F680-\U0001F6FF"  # transport & map symbols
+                "\U0001F1E0-\U0001F1FF"  # flags (iOS)
+                "\U00002700-\U000027BF"  # dingbats
+                "\U0001F900-\U0001F9FF"  # supplemental symbols and pictographs
+                "\U00002600-\U000026FF"  # misc symbols
+                "\U00002B00-\U00002BFF"
+                "]+",
+                flags=re.UNICODE,
+            )
+            return emoji_pattern.sub(r"", text)
+        except re.error:
+            # fallback: remove surrogate pairs
+            return ''.join(ch for ch in text if ord(ch) < 0x10000)
     
     def _transcribe_google(self, audio):
         """Transcribe audio using Google STT"""
@@ -588,14 +629,17 @@ class VoiceAssistant:
     
     def speak(self, text, blocking=True):
         """Convert text to speech and play it"""
+        # remove emojis before speaking
+        safe_text = self._strip_emojis(text)
+
         def _speak_thread():
             try:
                 print(f"🔊 Speaking with {self.tts_type}...")
                 
                 if self.tts_type == "Kokoro":
-                    self._speak_kokoro(text)
+                    self._speak_kokoro(safe_text)
                 elif self.tts_type == "KittenTTS":
-                    self._speak_kitten(text)
+                    self._speak_kitten(safe_text)
                 else:
                     print("❌ No TTS engine available")
                     
