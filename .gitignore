@@ -45,3 +45,7 @@ Thumbs.db
 
 # Audio cache
 audio_cache/
+
+
+#Ignore vscode AI rules
+.github\instructions\codacy.instructions.md
