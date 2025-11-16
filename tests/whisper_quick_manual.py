@@ -14,7 +14,7 @@ This is a quick-and-dirty manual test (not a unit test). It avoids importing
 the full `VoiceAssistant` class to keep startup light and focused on Whisper.
 """
 
-from config import WHISPER_MODEL, get_device, get_fp16, MICROPHONE_INDEX
+from config import WHISPER_MODEL, get_device, get_fp16
 import speech_recognition as sr
 import numpy as np
 import time
@@ -22,19 +22,15 @@ import time
 
 def record_clip(duration_s=6):
     r = sr.Recognizer()
-    mic_kwargs = {}
-    if MICROPHONE_INDEX is not None:
-        try:
-            mic_kwargs['device_index'] = int(MICROPHONE_INDEX)
-        except Exception:
-            pass
 
-    mic = sr.Microphone(**mic_kwargs)
+    # Use the default system microphone explicitly to avoid selecting a
+    # device index that may enable driver-side noise cancellation.
+    mic = sr.Microphone()
 
-    print("Adjusting for ambient noise (1s)...")
+    print(f"Using default system microphone. Recording for {duration_s} seconds — speak now.")
     with mic as source:
-        r.adjust_for_ambient_noise(source, duration=1)
-        print(f"Recording for {duration_s} seconds — speak now.")
+        # Do NOT call adjust_for_ambient_noise here to avoid any automatic
+        # preprocessing that can interact poorly with hardware drivers.
         audio = r.listen(source, timeout=duration_s + 2, phrase_time_limit=duration_s)
 
     return audio
@@ -60,7 +56,8 @@ def transcribe_with_whisper(audio, model, language="en"):
     except Exception:
         pass
 
-    # Save raw WAV for playback/inspection
+    # Save raw WAV for playback/inspection and transcribe from the file to
+    # avoid any in-memory normalization that might mask driver behavior.
     try:
         import soundfile as sf
         import os
@@ -70,45 +67,10 @@ def transcribe_with_whisper(audio, model, language="en"):
     except Exception as e:
         print(f"Could not save raw WAV: {e}")
 
-    # Attempt simple spectral gating noise reduction if available
-    denoised = None
+    # Transcribe using the saved raw WAV file (no denoising applied).
     try:
-        import noisereduce as nr
-        # Use a short initial segment as the noise profile (0.5s or less)
-        srate = 16000
-        noise_len = min(int(0.5 * srate), len(audio_np))
-        if noise_len > 0:
-            noise_clip = audio_np[:noise_len]
-            denoised = nr.reduce_noise(y=audio_np, sr=srate, y_noise=noise_clip)
-            try:
-                sf.write("logs/last_whisper_test_denoised.wav", denoised, srate, subtype="PCM_16")
-                print("Saved denoised recording to logs/last_whisper_test_denoised.wav")
-            except Exception:
-                pass
-        else:
-            denoised = audio_np
-    except Exception as e:
-        print(f"noisereduce not available or failed: {e}")
-        denoised = audio_np
-
-    # Normalize to avoid clipping issues when saving
-    try:
-        if denoised is not None and np.max(np.abs(denoised)) > 0:
-            denoised = denoised / max(1e-8, np.max(np.abs(denoised)))
-    except Exception:
-        pass
-
-    # Try transcribing the denoised file (prefer file path for Whisper)
-    try:
-        # If we saved the denoised file, prefer that path
-        denoised_path = "logs/last_whisper_test_denoised.wav"
-        import os
-        if os.path.exists(denoised_path):
-            result = model.transcribe(denoised_path, fp16=get_fp16(), language=language)
-        else:
-            # Fallback to transcribing numpy directly
-            result = model.transcribe(denoised, fp16=get_fp16(), language=language)
-
+        raw_path = "logs/last_whisper_test_raw.wav"
+        result = model.transcribe(raw_path, fp16=get_fp16(), language=language)
         text = result.get("text", "").strip()
         return text
     except Exception as e:
